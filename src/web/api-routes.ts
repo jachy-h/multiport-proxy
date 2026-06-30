@@ -1,9 +1,51 @@
 import express, { Router, Request, Response } from 'express';
 import * as net from 'net';
+import * as http from 'http';
+import * as https from 'https';
 import { execSync } from 'child_process';
 import { ConfigManager } from '../server/config-manager';
 import { Logger } from '../server/logger';
 import { ProxyServer } from '../server/proxy-server';
+
+// 常用软件端口列表
+const RESERVED_PORTS: Record<number, string> = {
+  20: 'FTP Data',
+  21: 'FTP',
+  22: 'SSH',
+  23: 'Telnet',
+  25: 'SMTP',
+  53: 'DNS',
+  80: 'HTTP',
+  110: 'POP3',
+  115: 'SFTP',
+  135: 'RPC',
+  139: 'NetBIOS',
+  143: 'IMAP',
+  194: 'IRC',
+  443: 'HTTPS',
+  445: 'SMB',
+  993: 'IMAPS',
+  995: 'POP3S',
+  1433: 'MSSQL',
+  1521: 'Oracle',
+  3306: 'MySQL',
+  3389: 'RDP',
+  5432: 'PostgreSQL',
+  5900: 'VNC',
+  6379: 'Redis',
+  8080: 'HTTP Alt',
+  8443: 'HTTPS Alt',
+  9090: 'Prometheus',
+  27017: 'MongoDB',
+};
+
+// 检查端口是否为常用软件端口
+function isReservedPort(port: number): { reserved: boolean; service?: string } {
+  if (RESERVED_PORTS[port]) {
+    return { reserved: true, service: RESERVED_PORTS[port] };
+  }
+  return { reserved: false };
+}
 
 // 检查端口是否被占用
 function checkPortAvailable(port: number): { available: boolean; details: string } {
@@ -90,6 +132,23 @@ export function createApiRouter(
         rule.id = Math.random().toString(36).slice(2);
       }
       rule.enabled = rule.enabled !== false;
+      rule.subRules = rule.subRules || [];
+
+      // 为子规则生成 ID
+      rule.subRules = rule.subRules.map((sr: any) => ({
+        ...sr,
+        id: sr.id || Math.random().toString(36).slice(2),
+        enabled: sr.enabled !== false,
+      }));
+
+      // 检查是否为常用软件端口
+      const reservedCheck = isReservedPort(rule.localPort);
+      if (reservedCheck.reserved) {
+        return res.status(400).json({
+          error: 'Reserved port',
+          details: `端口 ${rule.localPort} 是 ${reservedCheck.service} 的常用端口，请选择其他端口`,
+        });
+      }
 
       // 检查端口是否被占用
       const portCheck = checkPortAvailable(rule.localPort);
@@ -121,6 +180,16 @@ export function createApiRouter(
 
       // 如果端口改变了，需要检查新端口是否可用
       if (portChanged) {
+        // 检查是否为常用软件端口
+        const reservedCheck = isReservedPort(updates.localPort);
+        if (reservedCheck.reserved) {
+          return res.status(400).json({
+            error: 'Reserved port',
+            details: `端口 ${updates.localPort} 是 ${reservedCheck.service} 的常用端口，请选择其他端口`,
+          });
+        }
+
+        // 检查系统端口占用
         const portCheck = checkPortAvailable(updates.localPort);
         if (!portCheck.available) {
           return res.status(400).json({
@@ -128,6 +197,15 @@ export function createApiRouter(
             details: portCheck.details,
           });
         }
+      }
+
+      // 为子规则生成 ID
+      if (updates.subRules) {
+        updates.subRules = updates.subRules.map((sr: any) => ({
+          ...sr,
+          id: sr.id || Math.random().toString(36).slice(2),
+          enabled: sr.enabled !== false,
+        }));
       }
 
       configManager.updateRule(id, updates);
@@ -156,15 +234,19 @@ export function createApiRouter(
   // 获取日志
   router.get('/logs', (req: Request, res: Response) => {
     try {
-      const { limit = '100', offset = '0', port, statusCode } = req.query;
+      const { limit: requestedLimit = '200', offset = '0', port, statusCode } = req.query;
+      const parsedLimit = parseInt(requestedLimit as string, 10);
+      const parsedOffset = parseInt(offset as string, 10);
+      const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 200) : 200;
+      const safeOffset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
 
       let logs;
       if (port) {
-        logs = logger.getLogsByPort(parseInt(port as string), parseInt(limit as string));
+        logs = logger.getLogsByPort(parseInt(port as string), limit);
       } else if (statusCode) {
-        logs = logger.getLogsByStatusCode(parseInt(statusCode as string), parseInt(limit as string));
+        logs = logger.getLogsByStatusCode(parseInt(statusCode as string), limit);
       } else {
-        logs = logger.getLogs(parseInt(limit as string), parseInt(offset as string));
+        logs = logger.getLogs(limit, safeOffset);
       }
 
       res.json({
@@ -192,6 +274,102 @@ export function createApiRouter(
       runningPorts: proxyServer.getRunningPorts(),
       stats: logger.getStats(),
     });
+  });
+
+  // 测试代理连接
+  router.post('/config/rules/:id/test', async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const rules = configManager.getRules();
+    const rule = rules.find(r => r.id === id);
+
+    if (!rule) {
+      return res.status(404).json({ error: 'Rule not found' });
+    }
+
+    const startTime = Date.now();
+    const timeout = rule.timeout || 10000;
+    let settled = false;
+
+    const sendResult = (result: Record<string, unknown>): void => {
+      if (settled || res.headersSent || res.writableEnded || res.destroyed) {
+        return;
+      }
+
+      settled = true;
+      res.json(result);
+    };
+
+    try {
+      let testUrl = rule.targetUrl;
+
+      // 确保 URL 有协议前缀
+      if (!testUrl.startsWith('http://') && !testUrl.startsWith('https://')) {
+        testUrl = 'http://' + testUrl;
+      }
+
+      const urlObj = new URL(testUrl);
+      const isHttps = urlObj.protocol === 'https:';
+      const httpModule = isHttps ? https : http;
+
+      const options: http.RequestOptions = {
+        hostname: urlObj.hostname,
+        port: urlObj.port || (isHttps ? 443 : 80),
+        path: urlObj.pathname,
+        method: 'GET',
+        timeout: timeout,
+        headers: {
+          'User-Agent': 'MultiportProxy-Test/1.0',
+        },
+      };
+
+      // 如果是 HTTPS，忽略证书错误
+      if (isHttps) {
+        (options as any).rejectUnauthorized = false;
+      }
+
+      const testReq = httpModule.request(options, (testRes) => {
+        // 本接口只测试连通性，不读取响应内容，但仍需消费响应体以释放连接。
+        testRes.resume();
+        const duration = Date.now() - startTime;
+        sendResult({
+          success: true,
+          statusCode: testRes.statusCode,
+          duration,
+          message: `网络连接正常 (${testRes.statusCode})`,
+        });
+      });
+
+      testReq.on('error', (error) => {
+        const duration = Date.now() - startTime;
+        sendResult({
+          success: false,
+          duration,
+          error: error.message,
+          message: `网络连接失败: ${error.message}`,
+        });
+      });
+
+      testReq.on('timeout', () => {
+        const duration = Date.now() - startTime;
+        sendResult({
+          success: false,
+          duration,
+          error: 'timeout',
+          message: `连接超时 (${timeout}ms)`,
+        });
+        testReq.destroy();
+      });
+
+      testReq.end();
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+      sendResult({
+        success: false,
+        duration,
+        error: error.message,
+        message: `测试失败: ${error.message}`,
+      });
+    }
   });
 
   return router;

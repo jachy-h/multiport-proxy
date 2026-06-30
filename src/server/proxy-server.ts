@@ -1,6 +1,6 @@
 import * as http from 'http';
 import httpProxy from 'http-proxy';
-import { ConfigManager, ProxyRule } from './config-manager';
+import { ConfigManager, ProxyRule, SubRule } from './config-manager';
 import { Logger } from './logger';
 
 export class ProxyServer {
@@ -15,10 +15,31 @@ export class ProxyServer {
 
   startProxies(): void {
     const rules = this.configManager.getRules().filter(r => r.enabled);
-
     for (const rule of rules) {
       this.startProxy(rule);
     }
+  }
+
+  private matchSubRule(subRules: SubRule[], path: string): SubRule | null {
+    for (const subRule of subRules) {
+      if (!subRule.enabled) continue;
+      
+      if (subRule.type === 'prefix') {
+        if (path.startsWith(subRule.pattern)) {
+          return subRule;
+        }
+      } else if (subRule.type === 'regex') {
+        try {
+          const regex = new RegExp(subRule.pattern);
+          if (regex.test(path)) {
+            return subRule;
+          }
+        } catch (e) {
+          console.error(`Invalid regex pattern: ${subRule.pattern}`);
+        }
+      }
+    }
+    return null;
   }
 
   private startProxy(rule: ProxyRule): void {
@@ -26,17 +47,28 @@ export class ProxyServer {
       this.stopProxy(rule.localPort);
     }
 
-    const proxy = httpProxy.createProxyServer({
-      target: rule.targetUrl,
-      timeout: rule.timeout || 30000,
-      changeOrigin: true,
-      secure: false, // 允许自签名证书
-      followRedirects: true,
-      autoRewrite: true,
-    });
+    const enabledSubRules = (rule.subRules || []).filter(sr => sr.enabled);
 
     const server = http.createServer((req, res) => {
       const startTime = Date.now();
+      const path = req.url || '/';
+
+      // 匹配子规则
+      const matchedSubRule = enabledSubRules.length > 0 
+        ? this.matchSubRule(enabledSubRules, path) 
+        : null;
+      
+      // 确定目标地址
+      const targetUrl = matchedSubRule ? matchedSubRule.targetUrl : rule.targetUrl;
+
+      const proxy = httpProxy.createProxyServer({
+        target: targetUrl,
+        timeout: rule.timeout || 30000,
+        changeOrigin: true,
+        secure: false,
+        followRedirects: true,
+        autoRewrite: true,
+      });
 
       // 处理 CORS
       if (rule.cors?.enabled) {
@@ -77,18 +109,17 @@ export class ProxyServer {
           return;
         }
 
-        // 详细的错误日志
         console.error(`[${rule.localPort}] Proxy error:`, error.message);
-        console.error(`[${rule.localPort}] Request: ${req.method} ${req.url}`);
-        console.error(`[${rule.localPort}] Target: ${rule.targetUrl}`);
+        console.error(`[${rule.localPort}] Request: ${req.method} ${path}`);
+        console.error(`[${rule.localPort}] Target: ${targetUrl}`);
 
         this.logger.addLog({
           timestamp: Date.now(),
           localPort: rule.localPort,
           method: req.method || 'GET',
-          path: req.url || '/',
+          path,
           duration,
-          targetUrl: rule.targetUrl,
+          targetUrl: targetUrl,
           error: error.message,
         });
 
@@ -97,8 +128,8 @@ export class ProxyServer {
           res.end(JSON.stringify({
             error: 'Bad Gateway',
             message: error.message,
-            target: rule.targetUrl,
-            path: req.url,
+            target: targetUrl,
+            path,
           }));
         }
       });
@@ -111,10 +142,10 @@ export class ProxyServer {
           timestamp: Date.now(),
           localPort: rule.localPort,
           method: req.method || 'GET',
-          path: req.url || '/',
+          path,
           statusCode: proxyRes.statusCode,
           duration,
-          targetUrl: rule.targetUrl,
+          targetUrl: targetUrl,
         });
       });
 
@@ -123,7 +154,9 @@ export class ProxyServer {
 
     try {
       server.listen(rule.localPort, () => {
-        console.log(`✓ Proxy running: localhost:${rule.localPort} -> ${rule.targetUrl}`);
+        const subRuleCount = enabledSubRules.length;
+        const subInfo = subRuleCount > 0 ? ` (${subRuleCount} sub-rules)` : '';
+        console.log(`✓ Proxy running: localhost:${rule.localPort} -> ${rule.targetUrl}${subInfo}`);
       });
 
       server.on('error', (error: any) => {

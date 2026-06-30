@@ -17,6 +17,21 @@ async function main() {
   const logger = new Logger();
   const proxyServer = new ProxyServer(configManager, logger);
 
+  // 显示配置的规则
+  const rules = configManager.getRules();
+  console.log('📋 Configured Rules:');
+  if (rules.length > 0) {
+    rules.forEach((rule, index) => {
+      const status = rule.enabled ? '✅' : '⏸️';
+      const subRuleCount = (rule.subRules || []).filter(sr => sr.enabled).length;
+      const subInfo = subRuleCount > 0 ? ` (${subRuleCount} sub-rules)` : '';
+      console.log(`   ${status} :${rule.localPort} → ${rule.targetUrl}${subInfo}`);
+    });
+  } else {
+    console.log('   (empty) No rules configured yet');
+  }
+  console.log('');
+
   // 启动代理服务
   proxyServer.startProxies();
 
@@ -39,14 +54,16 @@ async function main() {
 
   // 启动 Web 服务器
   app.listen(WEB_PORT, async () => {
-    console.log(`✓ Web UI running on http://localhost:${WEB_PORT}`);
-    console.log(`✓ Running ports: ${proxyServer.getRunningPorts().join(', ') || 'none'}\n`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`✓ Web UI:      http://localhost:${WEB_PORT}`);
+    console.log(`✓ Running:     ${proxyServer.getRunningPorts().length} proxy(s)`);
+    console.log(`✓ Total rules: ${rules.filter(r => r.enabled).length} enabled / ${rules.length} total`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     // 自动打开浏览器
     try {
       const open = (await import('open')).default;
       await open(`http://localhost:${WEB_PORT}`);
-      console.log('✓ Browser opened automatically\n');
     } catch (error) {
       console.log(`Please open http://localhost:${WEB_PORT} in your browser\n`);
     }

@@ -1,10 +1,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+export type SubRuleType = 'prefix' | 'regex';
+
+export interface SubRule {
+  id: string;
+  type: SubRuleType;
+  pattern: string;     // 前缀或正则表达式
+  targetUrl: string;
+  enabled: boolean;
+}
+
 export interface ProxyRule {
   id: string;
   localPort: number;
-  targetUrl: string;
+  targetUrl: string;   // 默认目标地址（兜底）
+  subRules?: SubRule[]; // 子规则列表，按顺序匹配
   cors?: {
     enabled: boolean;
     origins?: string[];

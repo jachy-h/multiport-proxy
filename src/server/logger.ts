@@ -53,7 +53,7 @@ export class Logger {
   getStats() {
     return {
       totalLogs: this.logs.length,
-      errorCount: this.logs.filter(l => l.error).length,
+      errorCount: this.logs.filter(l => l.error || (l.statusCode !== undefined && l.statusCode >= 400)).length,
       averageDuration: this.logs.length > 0
         ? Math.round(this.logs.reduce((sum, log) => sum + log.duration, 0) / this.logs.length)
         : 0,
