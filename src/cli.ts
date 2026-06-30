@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import express from 'express';
+import * as net from 'net';
 import path from 'path';
 import { ConfigManager } from './server/config-manager';
 import { Logger } from './server/logger';
@@ -34,7 +35,7 @@ async function main() {
   console.log('');
 
   // 启动代理服务
-  proxyServer.startProxies();
+  await proxyServer.startProxies();
 
   // 创建 Web 服务器
   const app = express();
@@ -54,7 +55,7 @@ async function main() {
   });
 
   // 启动 Web 服务器
-  app.listen(WEB_PORT, async () => {
+  const webServer = app.listen(WEB_PORT, async () => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`✓ Web UI:      http://localhost:${WEB_PORT}`);
     console.log(`✓ Running:     ${proxyServer.getRunningPorts().length} proxy(s)`);
@@ -69,13 +70,47 @@ async function main() {
       console.log(`Please open http://localhost:${WEB_PORT} in your browser\n`);
     }
   });
-
-  // 优雅关闭
-  process.on('SIGINT', () => {
-    console.log('\n\n🛑 Shutting down...');
-    proxyServer.stopAllProxies();
-    process.exit(0);
+  const webSockets = new Set<net.Socket>();
+  webServer.on('connection', socket => {
+    webSockets.add(socket);
+    socket.once('close', () => webSockets.delete(socket));
   });
+
+  // 优雅关闭：先停止接收管理请求，再关闭全部代理端口。
+  let shuttingDown = false;
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n\n🛑 Received ${signal}; shutting down...`);
+
+    const closeWebServer = new Promise<void>(resolve => {
+      webServer.close(error => {
+        if (error) {
+          console.error(`✗ Web UI port ${WEB_PORT} close failed: ${error.message}`);
+        } else {
+          console.log(`✓ Web UI port closed: ${WEB_PORT}`);
+        }
+        resolve();
+      });
+      webServer.closeIdleConnections?.();
+      for (const socket of webSockets) {
+        socket.destroy();
+      }
+    });
+
+    await Promise.all([
+      closeWebServer,
+      proxyServer.stopAllProxies(`application shutdown (${signal})`),
+    ]);
+    console.log('✓ All ports closed; shutdown complete');
+    process.exit(0);
+  };
+
+  process.once('SIGINT', () => void shutdown('SIGINT'));
+  process.once('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
-main().catch(console.error);
+main().catch(error => {
+  console.error('✗ Failed to start Multiport Proxy:', error);
+  process.exitCode = 1;
+});

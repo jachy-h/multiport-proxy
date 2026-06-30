@@ -1,6 +1,6 @@
 {
   "name": "@jachy/multiport-proxy",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "A multi-port proxy server with web UI configuration",
   "main": "dist/index.js",
   "bin": {

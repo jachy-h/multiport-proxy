@@ -141,6 +141,25 @@
     </div>
   </div>
 
+  <!-- 操作确认层 -->
+  <div id="confirmModal" class="confirm-modal" aria-hidden="true">
+    <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+      <div class="confirm-mark" aria-hidden="true">!</div>
+      <div class="confirm-copy">
+        <p class="confirm-eyebrow">请确认操作</p>
+        <h3 id="confirmTitle">确认继续？</h3>
+        <p id="confirmMessage"></p>
+      </div>
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-secondary" id="confirmCancelBtn">取消</button>
+        <button type="button" class="btn btn-danger" id="confirmActionBtn">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 非阻塞式消息提示 -->
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="false"></div>
+
   <script src="/app.js"></script>
 </body>
 </html>

@@ -3,6 +3,94 @@ let currentSubRules = [];
 const LOG_DISPLAY_LIMIT = 200;
 let isLoadingLogs = false;
 let lastRenderedLogIds = null;
+let pendingConfirmation = null;
+let confirmationTrigger = null;
+
+const TOAST_ICONS = {
+  success: '✓',
+  error: '!',
+  warning: '!',
+  info: 'i',
+};
+
+function showToast(message, type = 'info', title = '') {
+  const region = document.getElementById('toastRegion');
+  const toast = document.createElement('div');
+  const toastTitle = title || {
+    success: '操作成功',
+    error: '操作未完成',
+    warning: '请检查输入',
+    info: '提示',
+  }[type];
+
+  toast.className = `toast toast-${type}`;
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+
+  const icon = document.createElement('span');
+  icon.className = 'toast-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = TOAST_ICONS[type] || TOAST_ICONS.info;
+
+  const copy = document.createElement('div');
+  copy.className = 'toast-copy';
+  const heading = document.createElement('strong');
+  heading.textContent = toastTitle;
+  const body = document.createElement('span');
+  body.textContent = message;
+  copy.append(heading, body);
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'toast-close';
+  closeButton.setAttribute('aria-label', '关闭提示');
+  closeButton.textContent = '×';
+
+  const dismiss = () => {
+    if (toast.classList.contains('leaving')) return;
+    toast.classList.add('leaving');
+    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  };
+
+  closeButton.addEventListener('click', dismiss);
+  toast.append(icon, copy, closeButton);
+  region.appendChild(toast);
+  setTimeout(dismiss, type === 'error' ? 6000 : 3600);
+}
+
+function requestConfirmation({ title, message, confirmLabel = '确认', danger = true }) {
+  const modal = document.getElementById('confirmModal');
+  const actionButton = document.getElementById('confirmActionBtn');
+  confirmationTrigger = document.activeElement;
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMessage').textContent = message;
+  actionButton.textContent = confirmLabel;
+  actionButton.className = `btn ${danger ? 'btn-danger' : 'btn-primary'}`;
+  modal.classList.add('show');
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+
+  requestAnimationFrame(() => document.getElementById('confirmCancelBtn').focus());
+  return new Promise(resolve => {
+    pendingConfirmation = resolve;
+  });
+}
+
+function settleConfirmation(confirmed) {
+  if (!pendingConfirmation) return;
+  const resolve = pendingConfirmation;
+  pendingConfirmation = null;
+  const modal = document.getElementById('confirmModal');
+  modal.classList.remove('show');
+  modal.setAttribute('aria-hidden', 'true');
+  if (!document.getElementById('ruleModal').classList.contains('show')) {
+    document.body.classList.remove('modal-open');
+  }
+  if (confirmationTrigger && typeof confirmationTrigger.focus === 'function') {
+    confirmationTrigger.focus();
+  }
+  confirmationTrigger = null;
+  resolve(confirmed);
+}
 
 // 启用 CORS 复选框的事件监听
 document.addEventListener('DOMContentLoaded', () => {
@@ -33,6 +121,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 日志筛选
   document.getElementById('logFilter').addEventListener('input', filterLogs);
+
+  document.getElementById('confirmCancelBtn').addEventListener('click', () => settleConfirmation(false));
+  document.getElementById('confirmActionBtn').addEventListener('click', () => settleConfirmation(true));
+  document.getElementById('confirmModal').addEventListener('click', event => {
+    if (event.target.id === 'confirmModal') settleConfirmation(false);
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && pendingConfirmation) {
+      event.preventDefault();
+      settleConfirmation(false);
+      return;
+    }
+
+    if (event.key === 'Tab' && pendingConfirmation) {
+      const cancelButton = document.getElementById('confirmCancelBtn');
+      const actionButton = document.getElementById('confirmActionBtn');
+      if (event.shiftKey && document.activeElement === cancelButton) {
+        event.preventDefault();
+        actionButton.focus();
+      } else if (!event.shiftKey && document.activeElement === actionButton) {
+        event.preventDefault();
+        cancelButton.focus();
+      }
+    }
+  });
 });
 
 // 验证端口
@@ -199,6 +312,7 @@ function showAddRuleForm() {
   document.getElementById('portHint').style.display = 'none';
   renderSubRules();
   document.getElementById('ruleModal').classList.add('show');
+  document.body.classList.add('modal-open');
 }
 
 // 编辑规则
@@ -226,6 +340,7 @@ async function editRule(id) {
 
     renderSubRules();
     document.getElementById('ruleModal').classList.add('show');
+    document.body.classList.add('modal-open');
   } catch (error) {
     console.error('Failed to edit rule:', error);
   }
@@ -319,7 +434,7 @@ async function saveRule(e) {
   // 验证子规则
   for (const sr of currentSubRules) {
     if (sr.enabled && (!sr.pattern || !sr.targetUrl)) {
-      alert('启用的子规则必须填写匹配规则和目标地址');
+      showToast('启用的子规则必须同时填写匹配规则和目标地址。', 'warning');
       return;
     }
   }
@@ -367,17 +482,23 @@ async function saveRule(e) {
 
     closeRuleForm();
     loadRules();
-    alert('规则已保存！');
+    showToast('端口配置已同步生效。', 'success', '规则已保存');
   } catch (error) {
     console.error('Error saving rule:', error);
-    alert('保存失败：' + error.message);
+    showToast(error.message, 'error', '规则保存失败');
   }
 }
 
 // 删除规则
 async function deleteRule() {
   if (!currentEditingId) return;
-  if (!confirm('确定删除此规则吗？')) return;
+  const port = document.getElementById('rulePort').value;
+  const confirmed = await requestConfirmation({
+    title: `删除端口 :${port} 的规则？`,
+    message: '删除后，该端口会立即停止监听，此操作无法撤销。',
+    confirmLabel: '删除规则',
+  });
+  if (!confirmed) return;
 
   try {
     const response = await fetch(`/api/config/rules/${currentEditingId}`, {
@@ -390,16 +511,19 @@ async function deleteRule() {
 
     closeRuleForm();
     loadRules();
-    alert('规则已删除！');
+    showToast(`端口 :${port} 已停止监听。`, 'success', '规则已删除');
   } catch (error) {
     console.error('Error deleting rule:', error);
-    alert('删除失败：' + error.message);
+    showToast(error.message, 'error', '规则删除失败');
   }
 }
 
 // 关闭表单
 function closeRuleForm() {
   document.getElementById('ruleModal').classList.remove('show');
+  if (!document.getElementById('confirmModal').classList.contains('show')) {
+    document.body.classList.remove('modal-open');
+  }
   currentEditingId = null;
   currentSubRules = [];
 }
@@ -496,7 +620,12 @@ function filterLogs() {
 
 // 清空日志
 async function clearLogs() {
-  if (!confirm('确定清空所有日志吗？')) return;
+  const confirmed = await requestConfirmation({
+    title: '清空全部请求日志？',
+    message: '当前显示的请求记录和统计数据会被清除，此操作无法撤销。',
+    confirmLabel: '清空日志',
+  });
+  if (!confirmed) return;
 
   try {
     const response = await fetch('/api/logs', {
@@ -507,9 +636,11 @@ async function clearLogs() {
       throw new Error('Failed to clear logs');
     }
 
-    loadLogs();
+    await loadLogs();
+    showToast('请求记录与统计数据已清空。', 'success', '日志已清空');
   } catch (error) {
     console.error('Error clearing logs:', error);
+    showToast(error.message, 'error', '日志清空失败');
   }
 }
 

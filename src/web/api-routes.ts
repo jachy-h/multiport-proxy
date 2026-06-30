@@ -108,7 +108,7 @@ export function createApiRouter(
   });
 
   // 保存配置
-  router.post('/config', (req: Request, res: Response) => {
+  router.post('/config', async (req: Request, res: Response) => {
     try {
       const { rules } = req.body;
       if (!Array.isArray(rules)) {
@@ -116,7 +116,7 @@ export function createApiRouter(
       }
 
       configManager.setRules(rules);
-      proxyServer.updateProxies();
+      await proxyServer.updateProxies();
 
       res.json({ success: true, message: 'Config saved' });
     } catch (error: any) {
@@ -160,7 +160,7 @@ export function createApiRouter(
       }
 
       configManager.addRule(rule);
-      proxyServer.updateProxies();
+      await proxyServer.updateProxies();
 
       res.json({ success: true, rule });
     } catch (error: any) {
@@ -209,7 +209,7 @@ export function createApiRouter(
       }
 
       configManager.updateRule(id, updates);
-      proxyServer.updateProxies();
+      await proxyServer.updateProxies();
 
       res.json({ success: true, message: 'Rule updated' });
     } catch (error: any) {
@@ -218,12 +218,12 @@ export function createApiRouter(
   });
 
   // 删除规则
-  router.delete('/config/rules/:id', (req: Request, res: Response) => {
+  router.delete('/config/rules/:id', async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
       configManager.deleteRule(id);
-      proxyServer.updateProxies();
+      await proxyServer.updateProxies();
 
       res.json({ success: true, message: 'Rule deleted' });
     } catch (error: any) {
