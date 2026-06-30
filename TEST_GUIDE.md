@@ -237,10 +237,14 @@ server.listen(9999);
 **步骤：**
 1. 创建几个规则
 2. 停止应用（按 Ctrl+C）
-3. 查看 `data/config.json` 文件：
+3. 查看配置文件（启动日志会显示实际路径）：
 
 ```bash
-cat data/config.json
+# macOS / Linux
+cat ~/.config/multiport-proxy/config.json
+
+# Windows PowerShell
+Get-Content "$env:USERPROFILE\.config\multiport-proxy\config.json"
 ```
 
 4. 重新启动应用

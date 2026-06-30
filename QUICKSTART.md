@@ -188,9 +188,11 @@ GET /api/status
 
 配置会自动保存到：
 
-```
-./data/config.json
-```
+- macOS / Linux：`~/.config/multiport-proxy/config.json`
+- Windows：`%USERPROFILE%\.config\multiport-proxy\config.json`
+
+应用启动时会在终端显示实际使用的绝对路径。若新路径尚无配置，应用会校验旧路径
+`./data/config.json`；数据合法时自动复制到新位置，并保留旧文件作为回退。
 
 可以手动编辑此文件进行配置，修改后需要重启应用或通过 Web UI 保存。
 

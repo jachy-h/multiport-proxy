@@ -67,15 +67,13 @@ multiport-proxy/
 │   │   │   └── app.js               # 前端逻辑
 │   │   └── middleware.ts            # Web 中间件
 │   └── index.ts                     # 应用入口
-├── data/
-│   └── config.json                  # 配置持久化文件
 ├── package.json
 └── tsconfig.json
 ```
 
 ## 核心流程
 
-1. **启动**：应用启动时加载配置，初始化代理服务器和 Web 服务器
+1. **启动**：应用从系统配置目录加载规则，并在终端显示配置文件的绝对路径
 2. **Web UI**：自动打开浏览器访问配置页面 (localhost:8888)
 3. **配置**：用户通过 Web UI 添加/编辑/删除代理规则
 4. **代理**：根据配置将请求转发到目标服务
@@ -117,6 +115,10 @@ pnpm run dev
 - `DELETE /api/logs` - 清空所有日志
 
 ## 配置文件格式
+
+配置保存在用户主目录的 `~/.config/multiport-proxy/config.json`。Windows 对应
+`%USERPROFILE%\.config\multiport-proxy\config.json`。启动时终端会显示实际绝对路径；
+若新路径尚无配置，合法的旧版 `./data/config.json` 会自动迁移，旧文件会保留作为回退。
 
 ```json
 {

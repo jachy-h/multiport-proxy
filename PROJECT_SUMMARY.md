@@ -45,8 +45,6 @@ multiport-proxy/
 │           ├── index.html                # Web 界面（配置和日志面板）
 │           ├── style.css                 # 样式表（响应式设计）
 │           └── app.js                    # 前端逻辑（API 调用、DOM 操作）
-├── data/
-│   └── config.json                       # 配置持久化
 ├── dist/                                 # 编译输出
 ├── package.json                          # 项目配置
 ├── tsconfig.json                         # TypeScript 配置
@@ -70,7 +68,8 @@ multiport-proxy/
 管理代理规则配置：
 - 从文件加载配置
 - 支持规则的增删改查
-- 自动保存到 data/config.json
+- 自动保存到用户目录下的 `~/.config/multiport-proxy`
+- 自动校验并迁移旧的 `data/config.json`
 - 支持应用启动时自动加载
 
 ### 3. Logger (src/server/logger.ts)
@@ -100,7 +99,7 @@ Express 路由处理：
 ```
 启动应用
   ↓
-加载配置 (data/config.json)
+加载配置（系统配置目录，必要时迁移旧配置）
   ↓
 启动代理服务 (启用的规则)
   ↓

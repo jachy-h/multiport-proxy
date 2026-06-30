@@ -16,6 +16,7 @@ async function main() {
   const configManager = new ConfigManager();
   const logger = new Logger();
   const proxyServer = new ProxyServer(configManager, logger);
+  console.log(`💾 Config storage: ${configManager.getConfigPath()}\n`);
 
   // 显示配置的规则
   const rules = configManager.getRules();
