@@ -156,6 +156,10 @@ header h1 {
   color: #9ca3af;
 }
 
+.target-label:empty {
+  display: none;
+}
+
 .default-target-url {
   min-width: 0;
   overflow: hidden;

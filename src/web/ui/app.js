@@ -131,7 +131,7 @@ async function loadRules() {
             </div>
           </div>
           <div class="rule-target" onclick="editRule('${rule.id}')">
-            <span class="target-label">未匹配时</span>
+            <span class="target-label"></span>
             <span class="target-arrow" aria-hidden="true">→</span>
             <span class="default-target-url">${escapeHtml(rule.targetUrl)}</span>
           </div>

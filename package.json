@@ -1,6 +1,6 @@
 {
   "name": "@jachy/multiport-proxy",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A multi-port proxy server with web UI configuration",
   "main": "dist/index.js",
   "bin": {
@@ -15,10 +15,19 @@
     "dev": "ts-node src/cli.ts",
     "build": "tsc && cp -r src/web/ui dist/web/ && chmod +x dist/cli.js",
     "start": "node dist/cli.js",
-    "prepublishOnly": "pnpm run build",
+    "version:bump": "npm version patch --no-git-tag-version",
+    "prepublishOnly": "npm run version:bump && npm run build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["proxy", "multiport", "http", "cli", "reverse-proxy", "port-forwarding", "web-ui"],
+  "keywords": [
+    "proxy",
+    "multiport",
+    "http",
+    "cli",
+    "reverse-proxy",
+    "port-forwarding",
+    "web-ui"
+  ],
   "author": "Jachy",
   "license": "ISC",
   "repository": {
